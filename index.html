@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Face ID Login</title><link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+</head>
+<body>
+ <!-- Login Page -->
+<div id="login-container" class="container">
+    <h1>Login</h1>
+    <button id="login-face-btn">Login with Face ID</button>
+    <form id="email-login-form">
+      <input type="email" id="login-email" placeholder="Email" required />
+      <input type="password" id="login-password" placeholder="Password" required />
+      <button type="submit">Login with Email & Password</button>
+    </form>
+    <div class="alternative-login">
+      <a href="#" id="signup-link">Sign Up</a>
+    </div>
+  </div>
+  
+  <!-- Signup Page -->
+  <div id="signup-container" class="container" style="display: none;">
+    <h1>Sign Up</h1>
+    <form id="signup-form">
+      <input type="text" id="signup-name" placeholder="Name" required />
+      <input type="email" id="signup-email" placeholder="Email" required />
+      <input type="password" id="signup-password" placeholder="Password" required />
+      <button type="button" id="capture-face-btn">Capture Face</button>
+      <div class="camera-feed" style="display: none;">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div class="scan-overlay">Align your face</div>
+      </div>
+      <button type="submit" id="complete-signup-btn" disabled>Sign Up</button>
+    </form>
+    <div class="alternative-login">
+      <a href="#" id="back-to-login">Back to Login</a>
+    </div>
+  </div>
+
+  <script>
+    let webcam;
+
+    async function setupWebcam() {
+      // Load required models for face-api.js
+      await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
+      await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
+      await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+    
+      // Access the webcam
+      const constraints = { video: { facingMode: 'user' } }; // Use front-facing camera
+      const video = document.getElementById('webcam');
+    
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        video.play();
+      } catch (error) {
+        console.error('Error accessing webcam:', error);
+        alert('Unable to access the webcam. Please allow camera permissions.');
+      }
+    }
+
+    async function captureFaceDescriptor() {
+      const video = document.getElementById('webcam');
+      const canvas = faceapi.createCanvasFromMedia(video);
+      const displaySize = { width: video.width, height: video.height };
+      faceapi.matchDimensions(canvas, displaySize);
+
+      const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+      if (detections.length > 0) {
+        const faceDescriptor = Array.from(detections[0].descriptor);
+        return faceDescriptor;
+      } else {
+        alert('No face detected. Please try again.');
+        return null;
+      }
+    }
+
+    // Toggle between login and signup pages
+    document.getElementById('signup-link').addEventListener('click', event => {
+      event.preventDefault();
+      document.getElementById('login-container').style.display = 'none';
+      document.getElementById('signup-container').style.display = 'block';
+    });
+
+    document.getElementById('back-to-login').addEventListener('click', event => {
+      event.preventDefault();
+      document.getElementById('signup-container').style.display = 'none';
+      document.getElementById('login-container').style.display = 'block';
+    });
+// Handle "Login with Face ID" button
+document.getElementById('login-face-btn').addEventListener('click', () => {
+    const loginContainer = document.getElementById('login-container');
+    loginContainer.innerHTML = `
+      <h1>Login with Face ID</h1>
+      <div class="camera-feed">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div class="scan-overlay">Align your face</div>
+      </div>
+      <button id="confirm-scan-btn">Confirm Scan</button>
+      <div class="error-message" id="error-message"></div>
+    `;
+  
+    setupWebcam(); // Start the webcam
+  
+    // Handle face confirmation
+    document.getElementById('confirm-scan-btn').addEventListener('click', async () => {
+      const faceDescriptor = await captureFaceDescriptor();
+      if (faceDescriptor) {
+        // Send the face descriptor to the backend for verification
+        axios.post('/api/login-face', { faceDescriptor })
+          .then(response => {
+            if (response.data.success) {
+              alert('Login Successful!');
+            } else {
+              document.getElementById('error-message').textContent = 'Face Not Recognized. Try Again.';
+            }
+          })
+          .catch(error => {
+            console.error('Error during face login:', error);
+          });
+      }
+    });
+  });
+  
+  // Handle "Capture Face" during signup
+  document.getElementById('capture-face-btn').addEventListener('click', async () => {
+    const cameraFeed = document.querySelector('.camera-feed');
+    const completeSignupBtn = document.getElementById('complete-signup-btn');
+  
+    // Show the camera feed
+    cameraFeed.style.display = 'block';
+    setupWebcam();
+  
+    // Capture the face descriptor
+    const faceDescriptor = await captureFaceDescriptor();
+    if (faceDescriptor) {
+      cameraFeed.style.display = 'none';
+      completeSignupBtn.disabled = false;
+      completeSignupBtn.dataset.faceDescriptor = JSON.stringify(faceDescriptor); // Store face descriptor temporarily
+    }
+  });
+ 
+
+
+
+  
+
+    // Handle login with Email & Password
+    document.getElementById('email-login-form').addEventListener('submit', event => {
+      event.preventDefault();
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      axios.post('/api/login-email', { email, password })
+        .then(response => {
+          if (response.data.success) {
+            alert('Login Successful!');
+          } else {
+            alert('Invalid credentials.');
+          }
+        })
+        .catch(error => {
+          console.error('Error during email login:', error);
+        });
+    });
+
+    async function setupWebcam() {
+        const videoElement = document.getElementById('webcam');
+      
+        // Request access to the camera
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          videoElement.srcObject = stream; // Attach the stream to the video element
+          console.log('Camera access granted.');
+        } catch (error) {
+          console.error('Error accessing camera:', error);
+          alert('Unable to access the camera. Please grant permission.');
+        }
+      } 
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>  
+  <script src="face-api.js"></script>  
+     
+</body>
+</html>
