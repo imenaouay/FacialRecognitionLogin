@@ -1,0 +1,160 @@
+server and modify the frontend code accordingly. Here's the step-by-step implementation:
+
+First, install required dependencies:
+
+bash
+Copy
+npm install express mongoose bcrypt cors
+Create a new server.js file for the backend:
+
+javascript
+Copy
+const express = require('express');
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
+const cors = require('cors');
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/face_auth', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+});
+
+// User Schema
+const userSchema = new mongoose.Schema({
+  name: String,
+  email: { type: String, unique: true },
+  password: String,
+  faceDescriptor: [Number]
+});
+
+const User = mongoose.model('User', userSchema);
+
+app.use(cors());
+app.use(express.json());
+
+// Signup Endpoint
+app.post('/api/signup', async (req, res) => {
+  try {
+    const { name, email, password, faceDescriptor } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    const newUser = new User({
+      name,
+      email,
+      password: hashedPassword,
+      faceDescriptor
+    });
+
+    await newUser.save();
+    res.status(201).json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Face Login Endpoint
+app.post('/api/login-face', async (req, res) => {
+  try {
+    const { faceDescriptor } = req.body;
+    const users = await User.find();
+    
+    // Simple face matching (you might want to improve this)
+    for (const user of users) {
+      const distance = euclideanDistance(faceDescriptor, user.faceDescriptor);
+      if (distance < 0.6) { // Adjust threshold as needed
+        return res.json({ success: true, user });
+      }
+    }
+    
+    res.json({ success: false });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Email Login Endpoint
+app.post('/api/login-email', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ success: false });
+    }
+    
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Helper function for face matching
+function euclideanDistance(descriptor1, descriptor2) {
+  return Math.sqrt(
+    descriptor1
+      .map((val, i) => val - descriptor2[i])
+      .reduce((sum, diff) => sum + Math.pow(diff, 2), 0)
+  );
+}
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+Update your HTML form submission handler for signup:
+
+javascript
+Copy
+// Modify the signup form submit handler
+document.getElementById('signup-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const name = document.getElementById('signup-name').value;
+  const email = document.getElementById('signup-email').value;
+  const password = document.getElementById('signup-password').value;
+  const faceDescriptor = JSON.parse(document.getElementById('complete-signup-btn').dataset.faceDescriptor);
+
+  try {
+    const response = await axios.post('/api/signup', {
+      name,
+      email,
+      password,
+      faceDescriptor
+    });
+
+    if (response.data.success) {
+      alert('Signup Successful!');
+      document.getElementById('signup-container').style.display = 'none';
+      document.getElementById('login-container').style.display = 'block';
+    }
+  } catch (error) {
+    console.error('Signup error:', error);
+    alert('Signup failed: ' + error.response.data.error);
+  }
+});
+Update the face login handler:
+
+javascript
+Copy
+document.getElementById('confirm-scan-btn').addEventListener('click', async () => {
+  const faceDescriptor = await captureFaceDescriptor();
+  if (faceDescriptor) {
+    try {
+      const response = await axios.post('/api/login-face', { 
+        faceDescriptor: Array.from(faceDescriptor) 
+      });
+      
+      if (response.data.success) {
+        alert(`Welcome ${response.data.user.name}!`);
+      } else {
+        document.getElementById('error-message').textContent = 'Face Not Recognized';
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+    }
+  }
+});
+Add the following security headers to your HTML:
+
+html
+Copy
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://cdn.jsdelivr.net; connect-src 'self' http://localhost:5000;">
